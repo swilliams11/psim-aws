@@ -1,9 +1,11 @@
-#!/usr/bin/env python
+#!/usr/bin/python
 
 import boto3.ec2
 import os
 import threading
 import shlex
+import getopt
+import sys
 
 instances = None
 publicIps = None
@@ -14,12 +16,25 @@ ec2client = boto3.client('ec2')
 waiter = ec2client.get_waiter('instance_status_ok')
 #these should be removed
 SecurityGroup = 'psim_security_group'
-KeyPairName = 'amazonEC2pair'
-KeyPairFile = 'amazonEC2pair.pem'
+#KeyPairFile = 'amazonEC2pair.pem'
+KeyPairFile = None
+KeyPairName = None
+
 PrivateIpNodeDictionary = {} #dictionary of private IPs
 
 #ec2.create_instances(ImageId='ami-d93622b8', 
 #    InstanceType='t1.micro', MinCount=1, MaxCount=1, DryRun=True)
+
+
+def printUsage():
+  print 'Usage: psim-aws -f [name] -h'
+  print '' 
+  print '-f Amazon private key (.pem) located in ~/.ssh/key.pem'
+  print '-h Print this message'
+  print ''
+  print 'Typically, the "default" virtual host listens on HTTP.'
+  print 'For an HTTPS-only app, use "-x secure".'
+
 
 #
 #Create a default security group
@@ -79,14 +94,6 @@ def create_instances_with_params(SecurityGroupName, KeyNameString, p=1):
     	SecurityGroups=[
         	SecurityGroupName,
     	])
-
-
-
-def tag_all_instances():
-
-
-
-def private_ips():
 
 
 #
@@ -191,9 +198,9 @@ def create_list_of_instance_ids(insts):
 # Process that starts the whole shebang!
 #
 def start_ec2_servers():
-    SecurityGroup = 'psim_security_group'
-    KeyPairName = 'amazonEC2pair'
-    KeyPairFile = 'amazonEC2pair.pem'
+    #SecurityGroup = 'psim_security_group'
+    #KeyPairName = 'amazonEC2pair'
+    #KeyPairFile = 'amazonEC2pair.pem'
     print 'Creating the instances...'
     instances = create_instances_with_params(SecurityGroup, KeyPairName, 1)
     print 'Waiting for all instances to start...'
@@ -223,5 +230,30 @@ def read_file_tmp():
             print 'line %s ... value=%s' % (num, line)
 
 
-security_group = create_security_group()
-configure_security_group(security_group)
+#security_group = create_security_group()
+#configure_security_group(security_group)
+
+
+Options = 'f:h'
+
+opts = getopt.getopt(sys.argv[2:], Options)[0]
+
+for o in opts:
+    if o[0] == '-f':
+      KeyPairFile = o[1]
+      KeyPairName = keyPairFile[:-4]
+    elif o[0] == '-h':
+      printUsage()
+      sys.exit(0)
+"""
+BadUsage = False
+if not Username:
+    BadUsage = True
+    print '-f is required'
+
+if BadUsage:
+    printUsage()
+    sys.exit(1)
+"""
+
+

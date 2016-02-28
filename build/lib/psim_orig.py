@@ -1,10 +1,6 @@
 # Created by Massimo Di Pierro - BSD License
 
-import os, string, cPickle, time, math, itertools
-import socket
-import shlex
-import threading
-import sys
+import os, string, cPickle, time, math
 
 def BUS(i,j):
     return True
@@ -29,190 +25,7 @@ def TORUS2(p):
 def TREE(i,j):
     return i==int((j-1)/2) or j==int((i-1)/2)
 
-#
-#Server object 
-#
-class Server(object):
-    port = 9876
-
-    def log(self,message):
-        """
-        logs the message into self._logfile
-        """
-        if self.logfile!=None:
-            self.logfile.write(message)
-
-    #
-    #constructor
-    #
-    def __init__(self, rank, logfilename='server.log'):
-        """
-        """
-        self.privateIpNodeDictionary = {}
-        self.nodeToPrivateIpDictionary = {}
-        self.data = None
-        self.conn = None
-        self.addr = None
-        logfilename = 'server' + str(rank) + '.log'
-        self.logfile = open(logfilename,'w', 0)
-
-        #read the node and private IP address into a flow variable
-        self.log("\nReading node list...")
-        with open('nodelist', 'r') as f:
-            for line in f:
-                splitLine = shlex.split(line)
-                index = int(splitLine[0]) #read node number
-                #self.privateIpNodeDictionary[index] = splitLine[0] #private IP address
-                self.privateIpNodeDictionary[index] = '127.0.0.1'
-                self.log("\nprivate ip : %s" % (splitLine[0]))
-
-        #create the node to private Ip dictionary
-        for i in range(len(self.privateIpNodeDictionary)):
-            privateIp = self.privateIpNodeDictionary[i]
-            self.nodeToPrivateIpDictionary[privateIp] = i 
-
-        self.log("\nstarting the server in new thread.")
-        self.s = socket.socket()
-        self.rank = rank
-        print("rank %s" % (rank))
-        #self.s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.run_t()
-        #self.run_threaded2()
-        self.log("\nSTART: done.\n")
-
-
-    
-    #
-    # send the data
-    # open the connection and send the data
-    #
-    def send(self, node, data):
-        self.log("\nServer sending data from %s to %s" % (self.rank, node))
-        sendSuccessful = False
-        while not sendSuccessful:
-            try: 
-                self.s = socket.socket() 
-                self.s.connect((self.privateIpNodeDictionary[node], Server.port))
-                self.s.sendall(data)
-                #print s.recv(1024)
-                self.s.close()  
-                sendSuccessful = True
-            except socket.error as msg:
-                sendSuccessful = False
-                self.log("\nSleeping... send was not successful!")
-                time.sleep(.5)
-
-
-
-    #
-    #receive the data
-    #
-    def receive(self):
-        self.log('\nNode %s -> in server.receive()' % (self.rank))
-        threadName = threading.currentThread().getName()
-        self.log('\n%s -> Node %s -> waiting for connection @ %s' % (threadName, self.rank, self.addr))
-        #self.s = socket.socket()    
-        #self.s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.conn, self.addr = self.s.accept()     
-        self.log('\n%s -> Node %s -> connected to %s' % (threadName, self.rank, self.addr))
-        data = self.conn.receive(1024)
-        #lookup the node to send to
-        j = self.privateIpNodeDictionary[self.addr]
-        write_to_file(j, data)
-        #receive(data)
-        #datatemp = self.data
-        #self.data = None
-
-
-        #Do not return data from receive, it should read from a pipe instead
-        #return self.data
-
-
-    #
-    #write the data to file
-    #copied from PSim._send()
-    #
-    def write_to_file(self, j, data):
-        """
-        sends data to process #j
-        """
-        if j<0 or j>=self.p: #self.nprocs:
-            self.log("process %i: send(%i,...) failed!\n" % (self.rank,j))
-            raise Exception
-        self.log("process %i: send(%i,%s) starting...\n" % \
-                 (self.rank,j,repr(data)))
-        s = cPickle.dumps(data)
-        os.write(self.pipes[self.rank,j][1], string.zfill(str(len(s)),10))
-        os.write(self.pipes[self.rank,j][1], s)
-        self.log("process %i: send(%i,%s) success.\n" % \
-                 (self.rank,j,repr(data)))
-
-
-    def run_t(self):
-        self.log("\nstart run_t()")
-        t = threading.Thread(target=self.run, \
-                args=())
-        t.setDaemon(True)
-        t.start()    
-    #
-    # start the server and listen on static port.
-    #
-    def run(self):
-        threadName = threading.currentThread().getName()
-        self.log("\n%s -> start run()" % (threadName))
-        """
-        try:
-            self.s = socket.socket()  
-        except socket.error as msg:
-            self.log("\n%s -> Node %s -> could not create socket. %s" % (threadName, self.rank, msg))
-            sys.exit(1)
-        """
-        try:
-            #setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            self.s.bind(('', Server.port + self.rank))        
-            self.log("\n%s -> Node %s -> socket bound to %s" % (threadName, self.rank, Server.port))
-            self.s.listen(5)      
-            self.log("\n%s -> Node %s -> socket listening..." % (threadName, self.rank))
-
-        except socket.error as msg:
-            self.log("\n%s -> Node %s -> error during binding or listening. -> %s" % (threadName, self.rank, msg))
-            self.s.close()
-            self.s = None
-            sys.exit(1)
-        
-        while True:
-            self.receive()
-            
-
-    #
-    #Threaded version
-    # start the server and listen on static port.
-    #
-    def run_threaded(self):
-        self.s.bind(('', port))        
-        self.log("\n%s -> socket bound to %s" % (self.rank, Server.port))
-        self.s.listen(5)      
-        self.log("\n%s -> socket listening..." % (self.rank))
-        while True:
-            conn, addr = self.s.accept()     
-            self.log('Connected from %s' % (addr))
-            t = threading.Thread(target=handle_connection, \
-                args=(self, conn, addr))
-            t.start()
-
-
-    #
-    #Handle the connection
-    #
-    def handle_connection (self, conn, addr):
-        threadName = threading.currentThread().getName()
-        self.log('%s -> starting handling connection from %s' % (threadName, addr))
-
-
-
 class PSim(object):
-    counter = itertools.count()
-
     def log(self,message):
         """
         logs the message into self._logfile
@@ -220,53 +33,27 @@ class PSim(object):
         if self.logfile!=None:
             self.logfile.write(message)
 
-    def __init__(self,p,topology=SWITCH,logfilename='psim.log'):
+    def __init__(self,p,topology=SWITCH,logfilename=None):
         """
         forks p-1 processes and creates p*p
         """
-        self.rank = PSim.counter.next()
-        logfilename = 'psim' + str(self.rank) + '.log'
-        self.logfile = logfilename and open(logfilename,'w', 0)
+        self.logfile = logfilename and open(logfilename,'w')
         self.topology = topology
         self.log("START: creating %i parallel processes\n" % p)
         self.nprocs = p
-        self.privateIpNodeDictionary = {}
-        #startup the amazon EC2 instances here
-        #f = open('rank', 'r')
-        #self.rank = int(f.read())
-        
-        self.log("I am node %s\n" % (self.rank))
-        #Start the server
-        self.server = Server(rank=self.rank)
-       
-
-
-        #read the node and private IP address into a variable
-        with open('nodelist', 'r') as f:
-            for line in f:
-                splitLine = shlex.split(line)
-                #read node number and set that as index assign IP address to node number
-                #self.privateIpNodeDictionary[int(splitLine[0])] = splitLine[1]
-                self.privateIpNodeDictionary[int(splitLine[0])] = '127.0.0.1'
-
-        #f.close()
-
         #creates a dictionary
         self.pipes = {}
         for i in range(p):
             for j in range(p):
                 #this creates an os pipe for (0,0), (0,1), (0,2)
                 self.pipes[i,j] = os.pipe()
-
-
+        self.rank = 0
+        for i in range(1,p):
+            #os.fork() returns 0 for child and childs process id to parent
+            if not os.fork():
+                self.rank = i
+                break
         self.log("START: done.\n")
-
-
-    def send(self,j,data):
-        if not self.topology(self.rank,j):
-            raise RuntimeError, 'topology violation'
-        self._send(j,data)
-
 
     def _send(self,j,data):
         """
@@ -278,22 +65,15 @@ class PSim(object):
         self.log("process %i: send(%i,%s) starting...\n" % \
                  (self.rank,j,repr(data)))
         s = cPickle.dumps(data)
-
-        #Write to the TCP socket here with the private IP address
-        self.server.send(j, s)
-        #os.write(self.pipes[self.rank,j][1], string.zfill(str(len(s)),10))
-        #os.write(self.pipes[self.rank,j][1], s)
-
+        os.write(self.pipes[self.rank,j][1], string.zfill(str(len(s)),10))
+        os.write(self.pipes[self.rank,j][1], s)
         self.log("process %i: send(%i,%s) success.\n" % \
                  (self.rank,j,repr(data)))
 
-    
-
-    def recv(self,j):
+    def send(self,j,data):
         if not self.topology(self.rank,j):
             raise RuntimeError, 'topology violation'
-        return self._recv(j)
-
+        self._send(j,data)
 
     def _recv(self,j):
         """
@@ -303,21 +83,20 @@ class PSim(object):
             self.log("process %i: recv(%i) failed!\n" % (self.rank,j))
             raise RuntimeError
         self.log("process %i: recv(%i) starting...\n" % (self.rank,j))
-        #attempt to read the data from the socket here.
-        s = None
         try:
-            #s = self.server.receive()
             size=int(os.read(self.pipes[j,self.rank][0],10))
             s=os.read(self.pipes[j,self.rank][0],size)
         except Exception, e:
             self.log("process %i: COMMUNICATION ERROR!!!\n" % (self.rank))
             raise e
-
         data=cPickle.loads(s)
         self.log("process %i: recv(%i) done.\n" % (self.rank,j))
         return data
 
-   
+    def recv(self,j):
+        if not self.topology(self.rank,j):
+            raise RuntimeError, 'topology violation'
+        return self._recv(j)
 
     def one2all_broadcast(self, source, value=None):
         self.log("process %i: BEGIN one2all_broadcast(%i,%s)\n" % \
