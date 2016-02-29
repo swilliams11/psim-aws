@@ -32,7 +32,7 @@ Enter your credentials into the install/credentials file before you continue to 
 To install these dependencies run the following command:
 
 
-	python install-boto.py
+	sudo python install-boto.py
 
 
 ## Installation of psim-aws
@@ -54,7 +54,7 @@ After executing the following command you will be able to run the following comm
 
 
 prints:
-	Usage: psim-aws -f [name] -h
+	Usage: psim-aws -f [name] -p [code.py] -t [number of ec2 instances] -h
 
 	-f Amazon private key (.pem) located in ~/.ssh/key.pem
 	-p Python file

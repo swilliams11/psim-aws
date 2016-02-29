@@ -4,4 +4,3 @@ START: done.
 
 initialized PSim
 process 0: recv(1) starting...
-process 0: COMMUNICATION ERROR!!!

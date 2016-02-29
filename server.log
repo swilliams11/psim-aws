@@ -1,4 +1,3 @@
-Initializing server
 
 Reading node list...
 private ip : 0
@@ -10,3 +9,5 @@ START: done.
 
 Thread-1 -> Node 0 -> socket bound to 9876
 Thread-1 -> Node 0 -> socket listening...
+Node 0 -> in server.receive()
+Thread-1 -> Node 0 -> waiting for connection @ 1

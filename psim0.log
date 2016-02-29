@@ -1,6 +1,0 @@
-START: creating 3 parallel processes
-I am node 0
-START: done.
-
-initialized PSim
-process 0: recv(1) starting...

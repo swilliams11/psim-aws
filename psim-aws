@@ -6,6 +6,7 @@ import threading
 import shlex
 import getopt
 import sys
+from multiprocessing import Process
 
 instances = None
 publicIps = None
@@ -26,8 +27,6 @@ PrivateIpNodeDictionary = {} #dictionary of private IPs
 
 #ec2.create_instances(ImageId='ami-d93622b8', 
 #    InstanceType='t1.micro', MinCount=1, MaxCount=1, DryRun=True)
-
-
 
 
 def printUsage():
@@ -113,6 +112,9 @@ def start_ec2_servers():
     write_node_list(instances)
     print 'Copying files to each instance...'
     scp_node_list_to_all_ec2_instances(KeyPairFile, instances)
+    #scp_node_list_to_all_ec2_instances_processes(KeyPairFile, instances)
+    print 'Starting python code on each instance...'
+    start_python_code_processes(KeyPairFile, instances)
 
 
 #
@@ -126,9 +128,6 @@ def create_instances_with_params(SecurityGroupName, KeyNameString, p=1):
     	SecurityGroups=[
         	SecurityGroupName,
     	])
-
-
-
        
 #
 #wait until running
@@ -230,6 +229,60 @@ def write_rank_file(PublicIp, Rank):
     f.write(str(Rank))
     f.close()
 
+#
+#Multiprocessing function which does the same thing
+#as the scp_node_list_to_all_ec2_instances() method.
+#
+def scp_node_list_to_all_ec2_instances_processes(KeyPairName, insts):
+    for i in range(len(insts)):
+        print 'creating process %s -> %s %s' % (i, KeyPairName, insts[i].id)
+        if __name__ == '__main__':
+            p = Process(target=worker_processes, args=(KeyPairName, ec2.Instance(insts[i].id).public_ip_address))
+            p.start()
+            p.join()
+
+
+#
+#scp the nodelist file to all the ec2 instances multi threaded
+#
+def worker_processes(KeyPairName, PublicIpAddr):
+    threadName = threading.currentThread().getName()
+    try:
+        print '%s -> scp -i ~/.ssh/%s -o StrictHostKeyChecking=no %s %s ec2-user@%s:%s' \
+            % (threadName, \
+                KeyPairName, 'nodelist', 'psim.py', PublicIpAddr, '~/')
+        #upload nodelist and server files
+        os.system('scp -i ~/.ssh/%s -o StrictHostKeyChecking=no %s %s ec2-user@%s:%s' \
+            % (KeyPairName, 'nodelist', 'psim.py', PublicIpAddr, '~/') )
+        
+        #upload the rank to the node
+        print '%s -> scp -i ~/.ssh/%s -o StrictHostKeyChecking=no %s ec2-user@%s:%s' \
+            % (threadName, KeyPairName, PublicIpAddr, PublicIpAddr, '~/rank')
+        os.system('scp -i ~/.ssh/%s -o StrictHostKeyChecking=no %s ec2-user@%s:%s' \
+            % (KeyPairName, PublicIpAddr, PublicIpAddr, '~/rank') )
+        
+        #upload the python file to the node
+        print '%s -> scp -i ~/.ssh/%s -o StrictHostKeyChecking=no %s ec2-user@%s:%s' \
+            % (threadName, KeyPairName, PythonFile, PublicIpAddr, '~/')
+        os.system('scp -i ~/.ssh/%s -o StrictHostKeyChecking=no %s ec2-user@%s:%s' \
+            % (KeyPairName, PythonFile, PublicIpAddr, '~/') )
+        
+        #start the file
+        print '%s -> ssh -i ~/.ssh/%s -o StrictHostKeyChecking=no ec2-user@%s python %s' \
+            % (threadName, KeyPairName, PublicIpAddr,  PythonFile)
+        os.system('ssh -i ~/.ssh/%s -o StrictHostKeyChecking=no ec2-user@%s python %s' \
+            % (KeyPairName, PublicIpAddr,  PythonFile))
+        print '%s -> completed scp and ssh processes!' % (threadName)
+    except Exception, e:
+            print "\n%s -> Node %i: ERROR in scp/ssh worker thread!!!\n" % (threadName, self.rank)
+            raise e
+
+
+#
+#Threading function to scp start all the appropriate files
+#This function keeps freezing and does not start all the 
+#EC2 instances
+#
 def scp_node_list_to_all_ec2_instances(KeyPairName, insts):
     for i in range(len(insts)):
         print 'creating thread %s -> %s %s' % (i, KeyPairName, insts[i].id)
@@ -237,38 +290,73 @@ def scp_node_list_to_all_ec2_instances(KeyPairName, insts):
                 args=(KeyPairName, ec2.Instance(insts[i].id).public_ip_address))
         #threads.append(t)
         t.start()
+        t.join()
 #
 #scp the nodelist file to all the ec2 instances multi threaded
-# TO-DO NEED TO SCP THE PYTHON FILE THAT USER WANTS TO EXECUTE
 #
 def worker(KeyPairName, PublicIpAddr):
-    print '%s -> scp -i ~/.ssh/%s -o StrictHostKeyChecking=no %s %s ec2-user@%s:%s' \
-        % (threading.currentThread().getName(), \
-            KeyPairName, 'nodelist', 'psim.py', PublicIpAddr, '~/')
-    #upload nodelist and server files
-    os.system('scp -i ~/.ssh/%s -o StrictHostKeyChecking=no %s %s ec2-user@%s:%s' \
-        % (KeyPairName, 'nodelist', 'psim.py', PublicIpAddr, '~/') )
-    
-    #upload the rank to the node
-    print 'scp -i ~/.ssh/%s -o StrictHostKeyChecking=no %s ec2-user@%s:%s' \
-        % (KeyPairName, PublicIpAddr, PublicIpAddr, '~/rank')
-    os.system('scp -i ~/.ssh/%s -o StrictHostKeyChecking=no %s ec2-user@%s:%s' \
-        % (KeyPairName, PublicIpAddr, PublicIpAddr, '~/rank') )
-    
-    #upload the python file to the node
-    print 'scp -i ~/.ssh/%s -o StrictHostKeyChecking=no %s ec2-user@%s:%s' \
-        % (KeyPairName, PythonFile, PublicIpAddr, '~/')
-    os.system('scp -i ~/.ssh/%s -o StrictHostKeyChecking=no %s ec2-user@%s:%s' \
-        % (KeyPairName, PythonFile, PublicIpAddr, '~/') )
-    
-    #start the file
-    print 'ssh -i ~/.ssh/%s -o StrictHostKeyChecking=no ec2-user@%s python %s' \
-        % (KeyPairName, PublicIpAddr,  PythonFile)
-    os.system('ssh -i ~/.ssh/%s -o StrictHostKeyChecking=no ec2-user@%s python %s' \
-        % (KeyPairName, PublicIpAddr,  PythonFile))
+    threadName = threading.currentThread().getName()
+    try:
+        print '%s -> scp -i ~/.ssh/%s -o StrictHostKeyChecking=no %s %s ec2-user@%s:%s' \
+            % (threadName, \
+                KeyPairName, 'nodelist', 'psim.py', PublicIpAddr, '~/')
+        #upload nodelist and server files
+        os.system('scp -i ~/.ssh/%s -o StrictHostKeyChecking=no %s %s ec2-user@%s:%s' \
+            % (KeyPairName, 'nodelist', 'psim.py', PublicIpAddr, '~/') )
+        
+        #upload the rank to the node
+        print '%s -> scp -i ~/.ssh/%s -o StrictHostKeyChecking=no %s ec2-user@%s:%s' \
+            % (threadName, KeyPairName, PublicIpAddr, PublicIpAddr, '~/rank')
+        os.system('scp -i ~/.ssh/%s -o StrictHostKeyChecking=no %s ec2-user@%s:%s' \
+            % (KeyPairName, PublicIpAddr, PublicIpAddr, '~/rank') )
+        
+        #upload the python file to the node
+        print '%s -> scp -i ~/.ssh/%s -o StrictHostKeyChecking=no %s ec2-user@%s:%s' \
+            % (threadName, KeyPairName, PythonFile, PublicIpAddr, '~/')
+        os.system('scp -i ~/.ssh/%s -o StrictHostKeyChecking=no %s ec2-user@%s:%s' \
+            % (KeyPairName, PythonFile, PublicIpAddr, '~/') )
+        
+        #start the file
+        """
+        print '%s -> ssh -i ~/.ssh/%s -o StrictHostKeyChecking=no ec2-user@%s python %s' \
+            % (threadName, KeyPairName, PublicIpAddr,  PythonFile)
+        os.system('ssh -i ~/.ssh/%s -o StrictHostKeyChecking=no ec2-user@%s python %s' \
+            % (KeyPairName, PublicIpAddr,  PythonFile))
+        """
+        print '%s -> completed scp and ssh processes!' % (threadName)
+    except Exception, e:
+            print "\n%s -> Node %i: ERROR in scp/ssh worker thread!!!\n" % (threadName, self.rank)
+            raise e
 
 
+            
+#
+#Multiprocessing to start the python code.
+#
+def start_python_code_processes(KeyPairName, insts):
+    for i in range(len(insts)):
+        print 'Starting the python code -> process %s -> %s %s' % (i, KeyPairName, insts[i].id)
+        #if __name__ == '__main__':
+        p = Process(target=start_python_code_processes_f, args=(KeyPairName, ec2.Instance(insts[i].id).public_ip_address))
+        p.start()
+            #p.join()
 
+
+#
+#ssh start python code
+#
+def start_python_code_processes_f(KeyPairName, PublicIpAddr):
+    threadName = threading.currentThread().getName()
+    try:
+        #start the file
+        print '%s -> ssh -i ~/.ssh/%s -o StrictHostKeyChecking=no ec2-user@%s python %s' \
+            % (threadName, KeyPairName, PublicIpAddr,  PythonFile)
+        os.system('ssh -i ~/.ssh/%s -o StrictHostKeyChecking=no ec2-user@%s python %s' \
+            % (KeyPairName, PublicIpAddr,  PythonFile))
+        print '%s -> completed ssh processes!' % (threadName)
+    except Exception, e:
+            print "\n%s -> Node %i: ERROR in ssh worker thread!!!\n" % (threadName, self.rank)
+            raise e
 
 Options = 'f:p:t:h'
 

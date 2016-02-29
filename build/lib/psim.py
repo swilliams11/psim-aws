@@ -1,6 +1,6 @@
 # Created by Massimo Di Pierro - BSD License
 
-import os, string, cPickle, time, math
+import os, string, cPickle, time, math, itertools
 import socket
 import shlex
 import threading
@@ -45,18 +45,18 @@ class Server(object):
     #
     #constructor
     #
-    def __init__(self, rank, logfilename='server.log'):
+    def __init__(self, rank, plocal, logfilename='server.log'):
         """
         """
-        self.rank = rank
-        print("rank %s" % (rank))
-        self.logfile = open(logfilename,'w', 0)
-        self.log("Initializing server\n")
         self.privateIpNodeDictionary = {}
+        self.nodeToPrivateIpDictionary = {}
+        self.p = plocal
         self.data = None
         self.conn = None
         self.addr = None
-        self.s = None
+        #logfilename = 'server' + str(rank) + '.log'
+        logfilename = 'server.log'
+        self.logfile = open(logfilename,'w', 0)
 
         #read the node and private IP address into a flow variable
         self.log("\nReading node list...")
@@ -64,10 +64,22 @@ class Server(object):
             for line in f:
                 splitLine = shlex.split(line)
                 index = int(splitLine[0]) #read node number
-                self.privateIpNodeDictionary[index] = splitLine[0] #private IP address
-                self.log("\nprivate ip : %s" % (splitLine[0]))
-        
+                self.privateIpNodeDictionary[index] = splitLine[1] #private IP address
+                #self.privateIpNodeDictionary[index] = '127.0.0.1'
+                self.log("\n node: %s ; private ip : %s" % (index, splitLine[1]))
+
+        #create the node to private Ip dictionary
+        for i in range(len(self.privateIpNodeDictionary)):
+            privateIp = self.privateIpNodeDictionary[i]
+            self.nodeToPrivateIpDictionary[privateIp] = i 
+
         self.log("\nstarting the server in new thread.")
+        self.s = None
+        #self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.rank = rank
+        self.addr = self.privateIpNodeDictionary[rank]
+        print("rank %s" % (rank))
+        #self.s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.run_t()
         #self.run_threaded2()
         self.log("\nSTART: done.\n")
@@ -79,34 +91,32 @@ class Server(object):
     # open the connection and send the data
     #
     def send(self, node, data):
-        self.log("\nServer sending data from %s to %s" % (self.rank, node))
-        self.s = socket.socket() 
-        self.s.connect((self.privateIpNodeDictionary[node], Server.port))
-        self.s.sendall(data)
-        #print s.recv(1024)
-        self.s.close()
-
-
-    #
-    #receive the data
-    #
-    def receive(self):
-        threadName = threading.currentThread().getName()
-        self.conn, self.addr = self.s.accept()     
-        self.log('\n%s -> Node %s -> connected to %s' % (threadName, self.rank, self.addr))
-        self.data = self.conn.receive(1024)
-        #receive(data)
-        #datatemp = self.data
-        #self.data = None
-        return self.data
+        self.log("\nServer sending data from %s %s to %s" % (self.rank, self.addr, node))
+        sendSuccessful = False
+        while not sendSuccessful:
+            try: 
+                self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM) 
+                self.log('\nnode %s %s Connecting to %s %s on port %s' % (self.rank, self.addr, node, self.privateIpNodeDictionary[node], Server.port))
+                self.s.connect((self.privateIpNodeDictionary[node], Server.port))
+                self.s.sendall(data)
+                self.log('\ndata=%s ; data sent successfully!' %(data))
+                #print s.recv(1024)
+                self.s.close()  
+                sendSuccessful = True
+            except socket.error as msg:
+                sendSuccessful = False
+                self.log("\nSleeping... send was not successful!")
+                time.sleep(.5)
 
 
     def run_t(self):
         self.log("\nstart run_t()")
         t = threading.Thread(target=self.run, \
                 args=())
-        t.setDaemon(True)
+        #t.setDaemon(True)
         t.start()    
+
+
     #
     # start the server and listen on static port.
     #
@@ -114,11 +124,15 @@ class Server(object):
         threadName = threading.currentThread().getName()
         self.log("\n%s -> start run()" % (threadName))
         try:
-            self.s = socket.socket()  
+            self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)  
         except socket.error as msg:
             self.log("\n%s -> Node %s -> could not create socket. %s" % (threadName, self.rank, msg))
             sys.exit(1)
+        
         try:
+            #setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            #self.s.bind(('', Server.port + self.rank))  
+            self.log("\n%s -> Node %s -> going to bind to socket %s" % (threadName, self.rank, Server.port))
             self.s.bind(('', Server.port))        
             self.log("\n%s -> Node %s -> socket bound to %s" % (threadName, self.rank, Server.port))
             self.s.listen(5)      
@@ -130,15 +144,64 @@ class Server(object):
             self.s = None
             sys.exit(1)
         
-        ##while True:
-            
+        while True:
+            self.receive()
+           
+
+    #
+    #receive the data
+    #
+    def receive(self):
+        self.log('\nNode %s -> in server.receive()' % (self.rank))
+        threadName = threading.currentThread().getName()
+        self.log('\n%s -> Node %s -> waiting for connection @ %s' % (threadName, self.rank, self.addr))
+        #self.s = socket.socket()    
+        #self.s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.conn, addr = self.s.accept()     
+        self.log('\n%s -> Node %s -> connected to %s' % (threadName, self.rank, addr))
+        data = self.conn.recv(1024)
+        #lookup the node to send to
+        j = self.nodeToPrivateIpDictionary[addr[0]]  
+        self.log('\n%s -> Node %s -> Writing data from %s to file... Data=%s' % (threadName, self.rank, addr, data))
+        write_to_file(j, data)
+
+        #receive(data)
+        #datatemp = self.data
+        #self.data = None
+        #Do not return data from receive, it should read from a pipe instead
+        #return self.data
+
+
+    #
+    #write the data to file
+    #copied from PSim._send()
+    #
+    def write_to_file(self, j, data):
+        """
+        sends data to process #j
+        """
+        if j<0 or j>=self.p: #self.nprocs:
+            self.log("process %i: send(%i,...) failed!\n" % (self.rank,j))
+            raise Exception
+        self.log("process %i: send(%i,%s) starting...\n" % \
+                 (self.rank,j,repr(data)))
+        s = cPickle.dumps(data)
+        try:
+            os.write(self.pipes[self.rank,j][1], string.zfill(str(len(s)),10))
+            os.write(self.pipes[self.rank,j][1], s)
+            self.log("process %i: send(%i,%s) success.\n" % \
+                 (self.rank,j,repr(data)))
+        except Exception, e:
+            self.log("process %i: ERROR writing to pipe!!!\n" % (self.rank))
+            raise e
+
 
     #
     #Threaded version
     # start the server and listen on static port.
     #
     def run_threaded(self):
-        self.s.bind(('', port))        
+        self.s.bind(('', Server.port))        
         self.log("\n%s -> socket bound to %s" % (self.rank, Server.port))
         self.s.listen(5)      
         self.log("\n%s -> socket listening..." % (self.rank))
@@ -159,9 +222,9 @@ class Server(object):
 
 
 
-
 class PSim(object):
-    
+    counter = itertools.count()
+
     def log(self,message):
         """
         logs the message into self._logfile
@@ -173,7 +236,10 @@ class PSim(object):
         """
         forks p-1 processes and creates p*p
         """
-        self.logfile = logfilename and open(logfilename,'w', 0)
+        #self.rank = PSim.counter.next()
+        #logfilename = 'psim' + str(self.rank) + '.log'
+        #self.logfile = logfilename and open(logfilename,'w', 0)
+        self.logfile = open('psim.log', 'w', 0)
         self.topology = topology
         self.log("START: creating %i parallel processes\n" % p)
         self.nprocs = p
@@ -183,8 +249,7 @@ class PSim(object):
         self.rank = int(f.read())
         self.log("I am node %s\n" % (self.rank))
         #Start the server
-        self.server = Server(rank=self.rank)
-        f.close()
+        self.server = Server(rank=self.rank, plocal=p)
 
         #read the node and private IP address into a variable
         with open('nodelist', 'r') as f:
@@ -192,6 +257,17 @@ class PSim(object):
                 splitLine = shlex.split(line)
                 #read node number and set that as index assign IP address to node number
                 self.privateIpNodeDictionary[int(splitLine[0])] = splitLine[1]
+                #self.privateIpNodeDictionary[int(splitLine[0])] = '127.0.0.1'
+
+        #f.close()
+
+        #creates a dictionary
+        self.pipes = {}
+        for i in range(p):
+            for j in range(p):
+                #this creates an os pipe for (0,0), (0,1), (0,2)
+                self.pipes[i,j] = os.pipe()
+
 
         self.log("START: done.\n")
 
@@ -240,9 +316,9 @@ class PSim(object):
         #attempt to read the data from the socket here.
         s = None
         try:
-            s = self.server.receive()
-            #size=int(os.read(self.pipes[j,self.rank][0],10))
-            #s=os.read(self.pipes[j,self.rank][0],size)
+            #s = self.server.receive()
+            size=int(os.read(self.pipes[j,self.rank][0],10))
+            s=os.read(self.pipes[j,self.rank][0],size)
         except Exception, e:
             self.log("process %i: COMMUNICATION ERROR!!!\n" % (self.rank))
             raise e
