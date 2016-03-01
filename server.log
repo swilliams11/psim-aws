@@ -1,13 +1,14 @@
 
 Reading node list...
-private ip : 0
-private ip : 1
+ node: 0 ; private ip : 172.31.39.115
+ node: 1 ; private ip : 172.31.39.114
 starting the server in new thread.
 start run_t()
 Thread-1 -> start run()
 START: done.
 
+Thread-1 -> Node 0 -> going to bind to socket 9876
 Thread-1 -> Node 0 -> socket bound to 9876
 Thread-1 -> Node 0 -> socket listening...
 Node 0 -> in server.receive()
-Thread-1 -> Node 0 -> waiting for connection @ 1
+Thread-1 -> Node 0 -> waiting for connection @ 172.31.39.115

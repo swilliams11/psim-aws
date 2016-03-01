@@ -1,7 +1,7 @@
 
 from psim import *
 
-d = 2
+d = 3
 #d = 1
 p = int(2**d-1)
 

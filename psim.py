@@ -86,12 +86,19 @@ class Server(object):
         self.log("\nSTART: done.\n")
 
 
-    
+    """
+    #@staticmethod
+    @classmethod
+    def send(node, data):
+        self._send(node, data)
+    """
+
+    """
     #
     # send the data
     # open the connection and send the data
     #
-    def send(self, node, data):
+    def _send(self, node, data):
         self.log("\nServer sending data from %s %s to %s" % (self.rank, self.addr, node))
         sendSuccessful = False
         while not sendSuccessful:
@@ -100,7 +107,7 @@ class Server(object):
                 self.log('\nnode %s %s Connecting to %s %s on port %s' % (self.rank, self.addr, node, self.privateIpNodeDictionary[node], Server.port))
                 self.s.connect((self.privateIpNodeDictionary[node], Server.port))
                 self.s.sendall(data)
-                self.log('\ndata=%s ; data sent successfully!' %(data))
+                self.log('\ndata=%s ; data sent successfully!\n' %(data))
                 #print s.recv(1024)
                 self.s.close()  
                 sendSuccessful = True
@@ -108,7 +115,7 @@ class Server(object):
                 sendSuccessful = False
                 self.log("\nSleeping... send was not successful!")
                 time.sleep(.5)
-
+    """
 
     def run_t(self):
         self.log("\nstart run_t()")
@@ -162,6 +169,7 @@ class Server(object):
         self.conn, addr = self.s.accept()     
         self.log('\n%s -> Node %s -> connected to %s' % (threadName, self.rank, addr))
         data = self.conn.recv(1024)
+        data = cPickle.loads(data) #unpack the data
         #lookup the node to send to
         j = self.nodeToPrivateIpDictionary[addr[0]]  #use IP address of the tuple
         self.log('\n%s -> Node %s -> Writing data from %s to file... Data=%s' % (threadName, self.rank, addr, data))
@@ -183,15 +191,16 @@ class Server(object):
         sends data to process #j
         """
         if j<0 or j>=self.p: #self.nprocs:
-            self.log("process %i: send(%i,...) failed!\n" % (self.rank,j))
+            self.log("process %i: write_to_file(sendTo=%i,...) failed!\n" % (self.rank,j))
             raise Exception
-        self.log("process %i: send(%i,%s) starting...\n" % \
+        self.log("process %i: write_to_file(sendTo=%i,data=%s) starting...\n" % \
                  (self.rank,j,repr(data)))
-        s = cPickle.dumps(data)
+        s = cPickle.dumps(data) #pack the data
+        #s = data
         try:
             os.write(self.pipes[self.rank,j][1], string.zfill(str(len(s)),10))
             os.write(self.pipes[self.rank,j][1], s)
-            self.log("process %i: send(%i,%s) success.\n" % \
+            self.log("process %i: write_to_file(sendTo=%i,data=%s) success.\n" % \
                  (self.rank,j,repr(data)))
         except Exception, e:
             self.log("process %i: ERROR writing to pipe!!!\n" % (self.rank))
@@ -241,6 +250,7 @@ class PSim(object):
         #self.rank = PSim.counter.next()
         #logfilename = 'psim' + str(self.rank) + '.log'
         #self.logfile = logfilename and open(logfilename,'w', 0)
+        self.s = None
         self.logfile = open('psim.log', 'w', 0)
         self.topology = topology
         self.log("START: creating %i parallel processes\n" % p)
@@ -258,9 +268,10 @@ class PSim(object):
                 #this creates an os pipe for (0,0), (0,1), (0,2)
                 self.pipes[i,j] = os.pipe()
 
-
+        #self.Server = Server
         #Start the server
         self.server = Server(rank=self.rank, plocal=p, pipes=self.pipes)
+
 
         #read the node and private IP address into a variable
         with open('nodelist', 'r') as f:
@@ -293,9 +304,9 @@ class PSim(object):
         self.log("process %i: send(%i,%s) starting...\n" % \
                  (self.rank,j,repr(data)))
         s = cPickle.dumps(data)
-
+        #s = data
         #Write to the TCP socket here with the private IP address
-        self.server.send(j, s)
+        self.server_send(j, s)
         #os.write(self.pipes[self.rank,j][1], string.zfill(str(len(s)),10))
         #os.write(self.pipes[self.rank,j][1], s)
 
@@ -303,6 +314,29 @@ class PSim(object):
                  (self.rank,j,repr(data)))
 
     
+    #
+    # send the data
+    # open the connection and send the data
+    #
+    def server_send(self, node, data):
+        ip = self.privateIpNodeDictionary[self.rank]
+        self.log("\nsending data from %s %s to %s" % (self.rank, ip, node))
+        sendSuccessful = False
+        while not sendSuccessful:
+            try: 
+                self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM) 
+                self.log('\nnode %s %s Connecting to %s %s on port %s' % (self.rank, ip, node, self.privateIpNodeDictionary[node], Server.port))
+                self.s.connect((self.privateIpNodeDictionary[node], Server.port))
+                self.s.sendall(data)
+                self.log('\ndata sent successfully!\n')
+                #print s.recv(1024)
+                self.s.close()  
+                sendSuccessful = True
+            except socket.error as msg:
+                sendSuccessful = False
+                self.log("\nSleeping... send was not successful!")
+                time.sleep(.5)
+
 
     def recv(self,j):
         if not self.topology(self.rank,j):
@@ -323,12 +357,15 @@ class PSim(object):
         try:
             #s = self.server.receive()
             size=int(os.read(self.pipes[j,self.rank][0],10))
+            self.log('size = %d' % (size))
             s=os.read(self.pipes[j,self.rank][0],size)
+            self.log('cPickle data = %d' % (s))
         except Exception, e:
             self.log("process %i: COMMUNICATION ERROR!!!\n" % (self.rank))
             raise e
 
         data=cPickle.loads(s)
+        self.log('data = %d' % (data))
         self.log("process %i: recv(%i) done.\n" % (self.rank,j))
         return data
 
