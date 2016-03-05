@@ -64,4 +64,24 @@ prints:
 
 Python Code
 	The python code that executes on each Amazon EC2 instance should not have print statements. 
-	You should use comm.log() to print things to the log file instead.  
+	You should use comm.log() to print things to the log file instead. 
+
+	If you want to see what the python code that you can run on an Amazon EC2 instance, then view the p5.py file.  
+
+
+Python Code Example Run
+	Execute the following command to test that everything is working correctly.  You must replace the privatekey.pem file with your Amazon EC2 private key.  
+
+	psim-aws -f ~/.ssh/privatekey.pem -p p5.py -t 7
+
+
+Python Code Example Output
+	The following text is from the py.log file from my Amazon EC2 instance node 0 after I executed the command listed above.
+
+	LEFT - rcvd a = 26
+	RIGHT - rcvd b = 65
+	rank 0 x = 91
+	I am node 0 and I calculated 91
+
+	x = 91
+
