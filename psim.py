@@ -50,6 +50,7 @@ class Server(object):
         """
         self.privateIpNodeDictionary = {}
         self.nodeToPrivateIpDictionary = {}
+        #self.dataArrivedEvent = threading.Event()
         self.p = plocal
         self.data = None
         self.conn = None
@@ -76,46 +77,11 @@ class Server(object):
 
         self.log("\nstarting the server in new thread.")
         self.s = None
-        #self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.rank = rank
         self.addr = self.privateIpNodeDictionary[rank]
         print("rank %s" % (rank))
-        #self.s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.run_t()
-        #self.run_threaded2()
         self.log("\nSTART: done.\n")
-
-
-    """
-    #@staticmethod
-    @classmethod
-    def send(node, data):
-        self._send(node, data)
-    """
-
-    """
-    #
-    # send the data
-    # open the connection and send the data
-    #
-    def _send(self, node, data):
-        self.log("\nServer sending data from %s %s to %s" % (self.rank, self.addr, node))
-        sendSuccessful = False
-        while not sendSuccessful:
-            try: 
-                self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM) 
-                self.log('\nnode %s %s Connecting to %s %s on port %s' % (self.rank, self.addr, node, self.privateIpNodeDictionary[node], Server.port))
-                self.s.connect((self.privateIpNodeDictionary[node], Server.port))
-                self.s.sendall(data)
-                self.log('\ndata=%s ; data sent successfully!\n' %(data))
-                #print s.recv(1024)
-                self.s.close()  
-                sendSuccessful = True
-            except socket.error as msg:
-                sendSuccessful = False
-                self.log("\nSleeping... send was not successful!")
-                time.sleep(.5)
-    """
 
     def run_t(self):
         self.log("\nstart run_t()")
@@ -138,8 +104,6 @@ class Server(object):
             sys.exit(1)
         
         try:
-            #setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            #self.s.bind(('', Server.port + self.rank))  
             self.log("\n%s -> Node %s -> going to bind to socket %s" % (threadName, self.rank, Server.port))
             self.s.bind(('', Server.port))        
             self.log("\n%s -> Node %s -> socket bound to %s" % (threadName, self.rank, Server.port))
@@ -198,30 +162,16 @@ class Server(object):
         s = cPickle.dumps(data) #pack the data
         #s = data
         try:
-            os.write(self.pipes[self.rank,j][1], string.zfill(str(len(s)),10))
+            self.log("process %i: self.pipes[%s,%s][1] = %s\n" %(self.rank, self.rank, j, self.pipes[self.rank,j][1]))
+            os.write(self.pipes[self.rank,j][1], string.zfill(str(len(s)),20))
             os.write(self.pipes[self.rank,j][1], s)
             self.log("process %i: write_to_file(sendTo=%i,data=%s) success.\n" % \
                  (self.rank,j,repr(data)))
+            #self.log("process %i: setting the dataArrivedEvent.set()\n" % (self.rank))
+            #self.dataArrivedEvent.set() #sets the flag so the other thread can continue
         except Exception, e:
             self.log("process %i: ERROR writing to pipe!!!\n" % (self.rank))
             raise e
-
-
-    #
-    #Threaded version
-    # start the server and listen on static port.
-    #
-    def run_threaded(self):
-        self.s.bind(('', Server.port))        
-        self.log("\n%s -> socket bound to %s" % (self.rank, Server.port))
-        self.s.listen(50)      
-        self.log("\n%s -> socket listening..." % (self.rank))
-        while True:
-            conn, addr = self.s.accept()     
-            self.log('Connected from %s' % (addr))
-            t = threading.Thread(target=handle_connection, \
-                args=(self, conn, addr))
-            t.start()
 
 
     #
@@ -247,9 +197,6 @@ class PSim(object):
         """
         forks p-1 processes and creates p*p
         """
-        #self.rank = PSim.counter.next()
-        #logfilename = 'psim' + str(self.rank) + '.log'
-        #self.logfile = logfilename and open(logfilename,'w', 0)
         self.s = None
         self.logfile = open('psim.log', 'w', 0)
         self.topology = topology
@@ -268,7 +215,6 @@ class PSim(object):
                 #this creates an os pipe for (0,0), (0,1), (0,2)
                 self.pipes[i,j] = os.pipe()
 
-        #self.Server = Server
         #Start the server
         self.server = Server(rank=self.rank, plocal=p, pipes=self.pipes)
 
@@ -282,9 +228,6 @@ class PSim(object):
                 #self.privateIpNodeDictionary[int(splitLine[0])] = '127.0.0.1'
 
         #f.close()
-
-        
-
         self.log("START: done.\n")
 
 
@@ -309,7 +252,6 @@ class PSim(object):
         self.server_send(j, s)
         #os.write(self.pipes[self.rank,j][1], string.zfill(str(len(s)),10))
         #os.write(self.pipes[self.rank,j][1], s)
-
         self.log("process %i: send(%i,%s) success.\n" % \
                  (self.rank,j,repr(data)))
 
@@ -329,7 +271,6 @@ class PSim(object):
                 self.s.connect((self.privateIpNodeDictionary[node], Server.port))
                 self.s.sendall(data)
                 self.log('\ndata sent successfully!\n')
-                #print s.recv(1024)
                 self.s.close()  
                 sendSuccessful = True
             except socket.error as msg:
@@ -353,26 +294,26 @@ class PSim(object):
             raise RuntimeError
         self.log("process %i: recv(%i) starting...\n" % (self.rank,j))
         #attempt to read the data from the socket here.
+        #self.log("process %i: dataArrivedEvent.wait() called.\n" % (self.rank))
+        #self.server.dataArrivedEvent.wait()
         s = None
         try:
-            #s = self.server.receive()
-            while s == None:
-                size=int(os.read(self.pipes[j,self.rank][0],10))
-                if(size != 0 or size != None):
-                    self.log('size = %d' % (size))
-                    s=os.read(self.pipes[j,self.rank][0],size)
-                    self.log('cPickle data = %d' % (s))
-                else:
-                    self.log('sleeping for .5 seconds...') 
-                    time.sleep(.5)
-
+            #self.log("process %i is about to read size...\n" % (self.rank))
+            self.log("process %i pipes (%s, %s) = %s\n" % (self.rank, self.rank,j, self.pipes[self.rank,j][0]))
+            #self.log("process %i pipes (%s, %s) = %s\n" % (self.rank, j, self.rank, self.pipes[j,self.rank][0]))
+            size=int(os.read(self.pipes[self.rank,j][0], 20))
+            self.log('size = %d\n' % (size))
+            s=os.read(self.pipes[self.rank,j][0],size)
+            self.log('cPickle data = %s\n' % (s))
         except Exception, e:
             self.log("process %i: COMMUNICATION ERROR!!!\n" % (self.rank))
             raise e
 
         data=cPickle.loads(s)
-        self.log('data = %d' % (data))
+        self.log('data = %s\n' % (data))
         self.log("process %i: recv(%i) done.\n" % (self.rank,j))
+        #self.log("process %i: dataArrivedEvent.clear() called.\n" % (self.rank))
+        #self.server.dataArrivedEvent.clear()
         return data
 
    
