@@ -60,3 +60,8 @@ prints:
 	-p Python file
 	-t number of amazon EC2 instances to start
 	-h Print this message
+
+
+Python Code
+	The python code that executes on each Amazon EC2 instance should not have print statements. 
+	You should use comm.log() to print things to the log file instead.  

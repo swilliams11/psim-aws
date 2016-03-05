@@ -143,7 +143,7 @@ class Server(object):
             self.log("\n%s -> Node %s -> going to bind to socket %s" % (threadName, self.rank, Server.port))
             self.s.bind(('', Server.port))        
             self.log("\n%s -> Node %s -> socket bound to %s" % (threadName, self.rank, Server.port))
-            self.s.listen(5)      
+            self.s.listen(50)      
             self.log("\n%s -> Node %s -> socket listening..." % (threadName, self.rank))
 
         except socket.error as msg:
@@ -153,13 +153,13 @@ class Server(object):
             sys.exit(1)
         
         while True:
-            self.receive()
+            self.receive2()
            
 
     #
     #receive the data
     #
-    def receive(self):
+    def receive2(self):
         self.log('\nNode %s -> in server.receive()' % (self.rank))
         threadName = threading.currentThread().getName()
         self.log('\n%s -> Node %s -> waiting for connection @ %s' % (threadName, self.rank, self.addr))
@@ -172,7 +172,7 @@ class Server(object):
         data = cPickle.loads(data) #unpack the data
         #lookup the node to send to
         j = self.nodeToPrivateIpDictionary[addr[0]]  #use IP address of the tuple
-        self.log('\n%s -> Node %s -> Writing data from %s to file... Data=%s' % (threadName, self.rank, addr, data))
+        self.log('\n%s -> Node %s -> Writing data from %s to file... Data=%s\n' % (threadName, self.rank, addr, data))
         self.write_to_file(j, data)
 
         #receive(data)
@@ -191,9 +191,9 @@ class Server(object):
         sends data to process #j
         """
         if j<0 or j>=self.p: #self.nprocs:
-            self.log("process %i: write_to_file(sendTo=%i,...) failed!\n" % (self.rank,j))
+            self.log("\nprocess %i: write_to_file(sendTo=%i,...) failed!\n" % (self.rank,j))
             raise Exception
-        self.log("process %i: write_to_file(sendTo=%i,data=%s) starting...\n" % \
+        self.log("\nprocess %i: write_to_file(sendTo=%i,data=%s) starting...\n" % \
                  (self.rank,j,repr(data)))
         s = cPickle.dumps(data) #pack the data
         #s = data
@@ -214,7 +214,7 @@ class Server(object):
     def run_threaded(self):
         self.s.bind(('', Server.port))        
         self.log("\n%s -> socket bound to %s" % (self.rank, Server.port))
-        self.s.listen(5)      
+        self.s.listen(50)      
         self.log("\n%s -> socket listening..." % (self.rank))
         while True:
             conn, addr = self.s.accept()     
@@ -356,10 +356,16 @@ class PSim(object):
         s = None
         try:
             #s = self.server.receive()
-            size=int(os.read(self.pipes[j,self.rank][0],10))
-            self.log('size = %d' % (size))
-            s=os.read(self.pipes[j,self.rank][0],size)
-            self.log('cPickle data = %d' % (s))
+            while s == None:
+                size=int(os.read(self.pipes[j,self.rank][0],10))
+                if(size != 0 or size != None):
+                    self.log('size = %d' % (size))
+                    s=os.read(self.pipes[j,self.rank][0],size)
+                    self.log('cPickle data = %d' % (s))
+                else:
+                    self.log('sleeping for .5 seconds...') 
+                    time.sleep(.5)
+
         except Exception, e:
             self.log("process %i: COMMUNICATION ERROR!!!\n" % (self.rank))
             raise e
